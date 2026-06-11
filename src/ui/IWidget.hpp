@@ -100,8 +100,9 @@ class IWidget
     {
         if (getClickable() && isInside(x, y) && action == LEFT_CLICK)
         {
+            bool clicked = true;
             handleEvent();
-            return true;
+            return clicked;
         }
         return false;
     }
