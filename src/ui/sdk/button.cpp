@@ -74,11 +74,7 @@ void Button::updateData()
 
 void Button::handleEvent()
 {
-    if (m_event != nullptr)
-    {
-        auto event = m_event;
-        m_event();
-    }
+    if (m_event != nullptr) m_event();
 }
 
 void Button::handleHover(double x, double y)
