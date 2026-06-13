@@ -20,6 +20,10 @@ endif()
 if(OPTIKOS_RENDERER STREQUAL "OPENGL")
     find_package(glad CONFIG REQUIRED)
 endif()
+if(OPTIKOS_RENDERER STREQUAL "VULKAN")
+    find_package(Vulkan REQUIRED MODULE) 
+    find_package(unofficial-shaderc CONFIG REQUIRED)
+endif()
 
 set(COMMON_SOURCES
     src/optikos.cpp
@@ -53,6 +57,19 @@ if(OPTIKOS_RENDERER STREQUAL "OPENGL")
         OPTIKOS_SHADER_PATH="${CMAKE_CURRENT_SOURCE_DIR}/res/shaders/"
     )
     target_link_libraries(Optikos PUBLIC glad::glad)
+endif()
+
+if(OPTIKOS_RENDERER STREQUAL "VULKAN")
+    target_sources(Optikos PRIVATE 
+        src/render/vulkan/VulkanRenderer.cpp
+    )
+    target_compile_definitions(Optikos PUBLIC OPTIKOS_BACKEND_VULKAN)
+    target_compile_definitions(Optikos PRIVATE
+        OPTIKOS_SHADER_PATH="${CMAKE_CURRENT_SOURCE_DIR}/res/shaders/"
+    )
+
+    target_link_libraries(Optikos PUBLIC Vulkan::Vulkan)
+    target_link_libraries(Optikos PRIVATE unofficial::shaderc::shaderc)
 endif()
 
 if(OPTIKOS_PLATFORM STREQUAL "GLFW")

@@ -1,9 +1,12 @@
 {
-    "name": "optikos",
-    "version": "0.1.0",
-    "dependencies": [
-        "glfw3",
-        "glad",
-        "freetype"
-    ]
+  "name": "optikos",
+  "version-string": "0.1.0",
+  "dependencies": [
+    "glfw3",
+    "glad",
+    "freetype",
+    "vulkan-headers",
+    "vulkan-loader",
+    "shaderc"
+  ]
 }

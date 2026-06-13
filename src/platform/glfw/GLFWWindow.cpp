@@ -77,13 +77,27 @@ void GLFWWindow::setWindowTitleBar(Color color)
 
 #else
     // linux
-    (void)color;
+    (void) color;
 #endif
 }
 
 void GLFWWindow::makeContextCurrent()
 {
     glfwMakeContextCurrent(m_window);
+}
+
+std::vector<const char*> GLFWWindow::getVulkanExtensions()
+{
+    uint32_t     count = 0;
+    const char** ext   = glfwGetRequiredInstanceExtensions(&count);
+
+    std::vector<const char*> extensions(ext, ext + count);
+
+#ifdef __APPLE__
+    extensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+#endif
+
+    return extensions;
 }
 
 void GLFWWindow::setRenderer(IRenderer* renderer)

@@ -9,6 +9,10 @@
 #include "shader/GLSL/GLShader.hpp"
 #endif
 
+#ifdef OPTIKOS_BACKEND_VULKAN
+#include "render/vulkan/VulkanRenderer.hpp"
+#endif
+
 #ifdef OPTIKOS_INPUT_GLWF
 #include "input/glfw/GLFWInputSystem.hpp"
 #endif
@@ -27,6 +31,9 @@ Optikos::Optikos(std::string_view title, unsigned int width, unsigned int height
 #ifdef OPTIKOS_BACKEND_OPENGL
     m_window = std::make_unique<GLFWWindow>(width, height, title,
                                             GraphicsConfig{GraphicsAPI::OpenGL, 4, 6});
+#elif defined(OPTIKOS_BACKEND_VULKAN)
+    m_window = std::make_unique<GLFWWindow>(width, height, title,
+                                            GraphicsConfig{GraphicsAPI::Vulkan, 1, 3});
 #else
     m_window = std::make_unique<GLFWWindow>(width, height, title,
                                             GraphicsConfig{GraphicsAPI::None, -1, -1});
@@ -36,6 +43,10 @@ Optikos::Optikos(std::string_view title, unsigned int width, unsigned int height
 #ifdef OPTIKOS_BACKEND_OPENGL
     auto shader = std::make_unique<GLShader>();
     m_renderer  = std::make_unique<OpenGLRenderer>(m_window.get(), std::move(shader));
+#endif
+
+#ifdef OPTIKOS_BACKEND_VULKAN
+    m_renderer = std::make_unique<VulkanRenderer>(m_window.get(), nullptr); /* TODO: nullptr !!! */
 #endif
 
 #ifdef OPTIKOS_INPUT_GLWF
