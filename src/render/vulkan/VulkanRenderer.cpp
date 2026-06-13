@@ -48,19 +48,7 @@ VulkanRenderer::VulkanRenderer(IWindow* window, std::unique_ptr<IShader> shader)
     vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, availableExtensions.data());
 
     LOG_INFO("Available Vulkan extensions on this system:", "log");
-    for (const auto& extension : availableExtensions)
-    {
-        LOG_INFO(extension.extensionName, "log");
-    }
-
-    std::cout << "=== VULKAN EXTENSIONS COMPILER CHECK ===" << std::endl;
-    std::cout << "Count: " << extensionCount << std::endl;
-
-    for (const auto& extension : availableExtensions)
-    {
-        LOG_INFO(extension.extensionName, "log");
-        std::cout << "Found: " << extension.extensionName << std::endl;
-    }
+    for (const auto& extension : availableExtensions) LOG_INFO(extension.extensionName, "log");
 }
 
 VulkanRenderer::~VulkanRenderer()
