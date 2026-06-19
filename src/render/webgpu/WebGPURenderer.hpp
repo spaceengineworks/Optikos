@@ -69,8 +69,8 @@ private:
     unsigned int                                        m_nextTextureId = 1;
 
     wgpu::Sampler m_defaultSampler = nullptr;
-
     unsigned int m_defaultShader;
+    std::unordered_map<WGPUTextureView, wgpu::BindGroup> m_bindGroupCache;
 
     void createRenderPipeline();
     void createBuffers();
@@ -79,6 +79,7 @@ private:
     void createAdapter();
     void createSurface();
     void createQueue();
+    wgpu::BindGroup getOrCreateBindGroupForTexture(wgpu::TextureView textureView);
 };
 
 }  // namespace Optikos

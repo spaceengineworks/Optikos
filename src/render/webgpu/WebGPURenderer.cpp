@@ -1,6 +1,7 @@
 #include "WebGPURenderer.hpp"
 
 #include <dawn/native/DawnNative.h>
+#include <webgpu/webgpu.h>
 #include <webgpu/webgpu_cpp.h>
 
 #include <iostream>
@@ -60,64 +61,68 @@ unsigned int WebGPURenderer::loadTexture(const std::vector<unsigned char>& data,
     if (data.empty() || width <= 0 || height <= 0) return 0;
 
     wgpu::TextureDescriptor textureDesc{};
-    textureDesc.label = wgpu::StringView(std::format("{} Loaded Texture", APP_NAME));
+    textureDesc.label     = wgpu::StringView(std::format("{} Loaded Texture", APP_NAME));
     textureDesc.dimension = wgpu::TextureDimension::e2D;
-    textureDesc.size = wgpu::Extent3D{ static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1 };
-    textureDesc.format = wgpu::TextureFormat::RGBA8Unorm;
-    textureDesc.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
+    textureDesc.size =
+        wgpu::Extent3D{static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1};
+    textureDesc.format        = wgpu::TextureFormat::RGBA8Unorm;
+    textureDesc.usage         = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
     textureDesc.mipLevelCount = 1;
-    textureDesc.sampleCount = 1;
+    textureDesc.sampleCount   = 1;
 
     wgpu::Texture texture = m_device.CreateTexture(&textureDesc);
 
-    bool isFont = (data.size() == static_cast<size_t>(width * height));
+    bool                       isFont = (data.size() == static_cast<size_t>(width * height));
     std::vector<unsigned char> rgbaData;
 
-    const unsigned char* uploadPtr = data.data();
-    size_t uploadSize = data.size();
+    const unsigned char* uploadPtr  = data.data();
+    size_t               uploadSize = data.size();
 
-    if (isFont) {
+    if (isFont)
+    {
         rgbaData.resize(width * height * 4);
-        for (int i = 0; i < width * height; ++i) {
+        for (int i = 0; i < width * height; ++i)
+        {
             unsigned char alpha = data[i];
-            rgbaData[i * 4 + 0] = 255;   // R
-            rgbaData[i * 4 + 1] = 255;   // G
-            rgbaData[i * 4 + 2] = 255;   // B
-            rgbaData[i * 4 + 3] = alpha; // Alpha
+            rgbaData[i * 4 + 0] = 255;    // R
+            rgbaData[i * 4 + 1] = 255;    // G
+            rgbaData[i * 4 + 2] = 255;    // B
+            rgbaData[i * 4 + 3] = alpha;  // Alpha
         }
-        uploadPtr = rgbaData.data();
+        uploadPtr  = rgbaData.data();
         uploadSize = rgbaData.size();
     }
 
     wgpu::TexelCopyTextureInfo texInfo{};
-    texInfo.texture = texture;
+    texInfo.texture  = texture;
     texInfo.mipLevel = 0;
-    texInfo.origin = wgpu::Origin3D{ 0, 0, 0 };
-    texInfo.aspect = wgpu::TextureAspect::All;
+    texInfo.origin   = wgpu::Origin3D{0, 0, 0};
+    texInfo.aspect   = wgpu::TextureAspect::All;
 
     wgpu::TexelCopyBufferLayout texLayout{};
-    texLayout.offset = 0;
-    texLayout.bytesPerRow = static_cast<uint32_t>(width) * 4;
+    texLayout.offset       = 0;
+    texLayout.bytesPerRow  = static_cast<uint32_t>(width) * 4;
     texLayout.rowsPerImage = static_cast<uint32_t>(height);
 
-    wgpu::Extent3D writeSize = wgpu::Extent3D{ static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1 };
+    wgpu::Extent3D writeSize =
+        wgpu::Extent3D{static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1};
 
     m_queue.WriteTexture(&texInfo, uploadPtr, uploadSize, &texLayout, &writeSize);
 
     wgpu::TextureViewDescriptor viewDesc{};
-    viewDesc.label = wgpu::StringView(std::format("{} Texture View", APP_NAME));
-    viewDesc.format = wgpu::TextureFormat::RGBA8Unorm;
-    viewDesc.dimension = wgpu::TextureViewDimension::e2D;
-    viewDesc.baseMipLevel = 0;
-    viewDesc.mipLevelCount = 1;
-    viewDesc.baseArrayLayer = 0;
+    viewDesc.label           = wgpu::StringView(std::format("{} Texture View", APP_NAME));
+    viewDesc.format          = wgpu::TextureFormat::RGBA8Unorm;
+    viewDesc.dimension       = wgpu::TextureViewDimension::e2D;
+    viewDesc.baseMipLevel    = 0;
+    viewDesc.mipLevelCount   = 1;
+    viewDesc.baseArrayLayer  = 0;
     viewDesc.arrayLayerCount = 1;
-    viewDesc.aspect = wgpu::TextureAspect::All;
+    viewDesc.aspect          = wgpu::TextureAspect::All;
 
     wgpu::TextureView textureView = texture.CreateView(&viewDesc);
 
     unsigned int id = m_nextTextureId++;
-    m_textures[id] = std::move(textureView);
+    m_textures[id]  = std::move(textureView);
 
     return id;
 }
@@ -126,116 +131,140 @@ void WebGPURenderer::flush()
 {
     if (m_renderQueue.getCommands().empty() || !m_currentEncoder) return;
 
-    m_passEncoder.SetPipeline(m_pipeline);
-    m_passEncoder.SetVertexBuffer(0, m_vertexBuffer);
-    m_passEncoder.SetIndexBuffer(m_indexBuffer, wgpu::IndexFormat::Uint32);
+    auto& queue = m_renderQueue.getMutableCommands();
 
-    auto& queue = m_renderQueue.getCommands();
+    std::sort(queue.begin(), queue.end(),
+              [](const DrawCommand& a, const DrawCommand& b)
+              {
+                  if (a.textureId != b.textureId) return a.textureId < b.textureId;
+                  return a.textureMode < b.textureMode;
+              });
 
-    std::vector<OptikosVertex> vertices;
-    std::vector<uint32_t>      indices;
+    std::vector<OptikosVertex> allVertices;
+    std::vector<uint32_t>      allIndices;
+    std::vector<uint8_t>       uniformCpuBuffer;
 
-    uint32_t indexOffset = 0;
+    wgpu::Limits limits;
+    m_device.GetLimits(&limits);
+    size_t alignment     = limits.minUniformBufferOffsetAlignment;
+    size_t uniformStride = (sizeof(RenderUniform) + alignment - 1) & ~(alignment - 1);
 
-    for (const auto& cmd : queue)
+    struct GpuBatch
     {
-        for (const auto& vertex : cmd.vertices)
-        {
-            OptikosVertex v{};
-            v.position[0] = vertex.x;
-            v.position[1] = vertex.y;
+        uint32_t     indexCount;
+        uint32_t     firstIndex;
+        uint32_t     uniformOffset;
+        unsigned int textureId;
+    };
+    std::vector<GpuBatch> batchesToRender;
 
-            v.color[0] = vertex.r / 255.0f;
-            v.color[1] = vertex.g / 255.0f;
-            v.color[2] = vertex.b / 255.0f;
-            v.color[3] = vertex.a / 255.0f;
-
-            v.texCoord[0] = vertex.u;
-            v.texCoord[1] = vertex.v;
-
-            v.fontParams[0] = vertex.fw;
-            v.fontParams[1] = vertex.tw;
-            v.fontParams[2] = vertex.fh;
-            v.fontParams[3] = vertex.th;
-
-            vertices.push_back(v);
-        }
-
-        for (auto idx : cmd.indices)
-        {
-            indices.push_back(idx + indexOffset);
-        }
-
-        indexOffset += cmd.vertices.size();
-    }
-
-    if (!vertices.empty())
-    {
-        m_queue.WriteBuffer(m_vertexBuffer, 0, vertices.data(),
-                            vertices.size() * sizeof(OptikosVertex));
-        m_queue.WriteBuffer(m_indexBuffer, 0, indices.data(), indices.size() * sizeof(uint32_t));
-    }
+    uint32_t indexOffset        = 0;
+    uint32_t currentIndexOffset = 0;
 
     float screenWidth  = static_cast<float>(m_window->getWidth());
     float screenHeight = static_cast<float>(m_window->getHeight());
 
-    RenderUniform uniformData{};
-    uniformData.uHasTexture =
-        (!queue.empty() && queue[0].textureId != 0) ? queue[0].textureMode : 0;
-    uniformData.uScreenSize[0] = screenWidth;
-    uniformData.uScreenSize[1] = screenHeight;
-
-    m_queue.WriteBuffer(m_uniformBuffer, 0, &uniformData, sizeof(RenderUniform));
-
-    wgpu::BindGroupLayout bindGroupLayout = m_pipeline.GetBindGroupLayout(0);
-
-    unsigned int      activeTextureId = !queue.empty() ? queue[0].textureId : 0;
-    wgpu::TextureView currentView     = nullptr;
-
-    auto it = m_textures.find(activeTextureId);
-    if (it != m_textures.end())
+    for (size_t i = 0; i < queue.size();)
     {
-        currentView = it->second;
-    }
-    else if (!m_textures.empty())
-    {
-        currentView = m_textures.begin()->second;
-    }
+        unsigned int currentTextureId   = queue[i].textureId;
+        int          currentTextureMode = queue[i].textureMode;
+        uint32_t     batchIndexCount    = 0;
+        uint32_t     startBatchIndex    = currentIndexOffset;
 
-    if (currentView)
-    {
-        std::vector<wgpu::BindGroupEntry> entries(3);
-
-        entries[0].binding = 0;
-        entries[0].buffer  = m_uniformBuffer;
-        entries[0].offset  = 0;
-        entries[0].size    = sizeof(RenderUniform);
-
-        entries[1].binding     = 1;
-        entries[1].textureView = currentView;
-
-        if (m_defaultSampler == nullptr)
+        size_t nextBatchIdx = i;
+        while (nextBatchIdx < queue.size() && queue[nextBatchIdx].textureId == currentTextureId &&
+               queue[nextBatchIdx].textureMode == currentTextureMode)
         {
-            wgpu::SamplerDescriptor samplerDesc{};
-            m_defaultSampler = m_device.CreateSampler(&samplerDesc);
+            const auto& cmd = queue[nextBatchIdx];
+
+            for (const auto& vertex : cmd.vertices)
+            {
+                OptikosVertex v{};
+                v.position[0]   = vertex.x;
+                v.position[1]   = vertex.y;
+                v.color[0]      = std::clamp(vertex.r / 255.0f, 0.0f, 1.0f);
+                v.color[1]      = std::clamp(vertex.g / 255.0f, 0.0f, 1.0f);
+                v.color[2]      = std::clamp(vertex.b / 255.0f, 0.0f, 1.0f);
+                v.color[3]      = std::clamp(vertex.a / 255.0f, 0.0f, 1.0f);
+                v.texCoord[0]   = vertex.u;
+                v.texCoord[1]   = vertex.v;
+                v.fontParams[0] = vertex.fw;
+                v.fontParams[1] = vertex.tw;
+                v.fontParams[2] = vertex.fh;
+                v.fontParams[3] = vertex.th;
+                allVertices.push_back(v);
+            }
+
+            for (auto idx : cmd.indices)
+            {
+                allIndices.push_back(idx + indexOffset);
+            }
+
+            batchIndexCount += cmd.indices.size();
+            indexOffset += cmd.vertices.size();
+            currentIndexOffset += cmd.indices.size();
+            nextBatchIdx++;
         }
-        entries[2].binding = 2;
-        entries[2].sampler = m_defaultSampler;
 
-        wgpu::BindGroupDescriptor bindGroupDesc{};
-        bindGroupDesc.label      = wgpu::StringView(std::format("{} Main Bind Group", APP_NAME));
-        bindGroupDesc.layout     = bindGroupLayout;
-        bindGroupDesc.entryCount = entries.size();
-        bindGroupDesc.entries    = entries.data();
+        if (batchIndexCount > 0)
+        {
+            RenderUniform uniformData{};
+            uniformData.uHasTexture    = (currentTextureId != 0) ? currentTextureMode : 0;
+            uniformData.uScreenSize[0] = screenWidth;
+            uniformData.uScreenSize[1] = screenHeight;
 
-        wgpu::BindGroup bindGroup = m_device.CreateBindGroup(&bindGroupDesc);
+            size_t offsetInBytes = uniformCpuBuffer.size();
+            uniformCpuBuffer.resize(offsetInBytes + uniformStride);
+            std::memcpy(uniformCpuBuffer.data() + offsetInBytes, &uniformData,
+                        sizeof(RenderUniform));
 
-        m_passEncoder.SetBindGroup(0, bindGroup);
+            batchesToRender.push_back({batchIndexCount, startBatchIndex,
+                                       static_cast<uint32_t>(offsetInBytes), currentTextureId});
+        }
+
+        i = nextBatchIdx;
     }
 
-    if (!indices.empty() && currentView)
+    if (allVertices.empty()) return;
+
+    m_queue.WriteBuffer(m_vertexBuffer, 0, allVertices.data(),
+                        allVertices.size() * sizeof(OptikosVertex));
+    m_queue.WriteBuffer(m_indexBuffer, 0, allIndices.data(), allIndices.size() * sizeof(uint32_t));
+
+    if (!m_uniformBuffer || m_uniformBuffer.GetSize() < uniformCpuBuffer.size())
     {
-        m_passEncoder.DrawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+        wgpu::BufferDescriptor desc{};
+        desc.size       = uniformCpuBuffer.size();
+        desc.usage      = wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+        m_uniformBuffer = m_device.CreateBuffer(&desc);
+
+        m_bindGroupCache.clear();
+    }
+    m_queue.WriteBuffer(m_uniformBuffer, 0, uniformCpuBuffer.data(), uniformCpuBuffer.size());
+
+    if (m_passEncoder)
+    {
+        m_passEncoder.SetPipeline(m_pipeline);
+        m_passEncoder.SetVertexBuffer(0, m_vertexBuffer);
+        m_passEncoder.SetIndexBuffer(m_indexBuffer, wgpu::IndexFormat::Uint32);
+
+        for (const auto& batch : batchesToRender)
+        {
+            wgpu::TextureView currentView = nullptr;
+            auto              it =
+                m_textures.find(batch.textureId != 0 ? batch.textureId : m_textures.begin()->first);
+            if (it != m_textures.end()) currentView = it->second;
+
+            if (!currentView && !m_textures.empty()) currentView = m_textures.begin()->second;
+            if (!currentView) continue;
+
+            wgpu::BindGroup batchBindGroup = getOrCreateBindGroupForTexture(currentView);
+
+            uint32_t dynamicOffset = batch.uniformOffset;
+            m_passEncoder.SetBindGroup(0, batchBindGroup, 1, &dynamicOffset);
+
+            m_passEncoder.DrawIndexed(batch.indexCount, 1, batch.firstIndex, 0, 0);
+        }
     }
 
     m_renderQueue.clear();
@@ -288,6 +317,40 @@ void WebGPURenderer::endFrame()
     m_currentEncoder = nullptr;
 }
 
+wgpu::BindGroup WebGPURenderer::getOrCreateBindGroupForTexture(wgpu::TextureView textureView)
+{
+    WGPUTextureView key = textureView.Get();
+
+    auto it = m_bindGroupCache.find(key);
+    if (it != m_bindGroupCache.end())
+    {
+        return it->second;
+    }
+
+    std::vector<wgpu::BindGroupEntry> entries(3);
+
+    entries[0].binding = 0;
+    entries[0].buffer  = m_uniformBuffer;
+    entries[0].offset  = 0;
+    entries[0].size    = sizeof(RenderUniform);
+
+    entries[1].binding     = 1;
+    entries[1].textureView = textureView;
+
+    entries[2].binding = 2;
+    entries[2].sampler = m_defaultSampler;
+
+    wgpu::BindGroupDescriptor bindGroupDesc{};
+    bindGroupDesc.layout     = m_pipeline.GetBindGroupLayout(0);
+    bindGroupDesc.entryCount = entries.size();
+    bindGroupDesc.entries    = entries.data();
+
+    wgpu::BindGroup newBindGroup = m_device.CreateBindGroup(&bindGroupDesc);
+
+    m_bindGroupCache[key] = newBindGroup;
+    return newBindGroup;
+}
+
 void WebGPURenderer::swap_buffer()
 {
     m_surface.Present();
@@ -331,13 +394,41 @@ void WebGPURenderer::createRenderPipeline()
     vertexAttributes[3].shaderLocation = 3;
 
     wgpu::VertexBufferLayout vertexBufferLayout{};
-    vertexBufferLayout.arrayStride    = (2 + 4 + 2 + 4) * sizeof(float);
+    vertexBufferLayout.arrayStride    = sizeof(OptikosVertex);
     vertexBufferLayout.stepMode       = wgpu::VertexStepMode::Vertex;
     vertexBufferLayout.attributeCount = vertexAttributes.size();
     vertexBufferLayout.attributes     = vertexAttributes.data();
 
+    std::vector<wgpu::BindGroupLayoutEntry> layoutEntries(3);
+
+    layoutEntries[0].binding     = 0;
+    layoutEntries[0].visibility  = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment;
+    layoutEntries[0].buffer.type = wgpu::BufferBindingType::Uniform;
+    layoutEntries[0].buffer.hasDynamicOffset = true;
+    layoutEntries[0].buffer.minBindingSize   = sizeof(RenderUniform);
+
+    layoutEntries[1].binding               = 1;
+    layoutEntries[1].visibility            = wgpu::ShaderStage::Fragment;
+    layoutEntries[1].texture.sampleType    = wgpu::TextureSampleType::Float;
+    layoutEntries[1].texture.viewDimension = wgpu::TextureViewDimension::e2D;
+
+    layoutEntries[2].binding      = 2;
+    layoutEntries[2].visibility   = wgpu::ShaderStage::Fragment;
+    layoutEntries[2].sampler.type = wgpu::SamplerBindingType::Filtering;
+
+    wgpu::BindGroupLayoutDescriptor bglDesc{};
+    bglDesc.entryCount                    = layoutEntries.size();
+    bglDesc.entries                       = layoutEntries.data();
+    wgpu::BindGroupLayout bindGroupLayout = m_device.CreateBindGroupLayout(&bglDesc);
+
+    wgpu::PipelineLayoutDescriptor layoutDesc{};
+    layoutDesc.bindGroupLayoutCount     = 1;
+    layoutDesc.bindGroupLayouts         = &bindGroupLayout;
+    wgpu::PipelineLayout pipelineLayout = m_device.CreatePipelineLayout(&layoutDesc);
+
     wgpu::RenderPipelineDescriptor pipelineDesc{};
-    pipelineDesc.label = wgpu::StringView(std::format("{} Main Pipeline", APP_NAME));
+    pipelineDesc.label  = wgpu::StringView(std::format("{} Main Pipeline", APP_NAME));
+    pipelineDesc.layout = pipelineLayout;
 
     auto wgslShader = static_cast<WGSLShader*>(m_shader.get());
 
@@ -375,8 +466,6 @@ void WebGPURenderer::createRenderPipeline()
     pipelineDesc.multisample.count                  = 1;
     pipelineDesc.multisample.mask                   = 0xFFFFFFFF;
     pipelineDesc.multisample.alphaToCoverageEnabled = false;
-
-    pipelineDesc.layout = nullptr;
 
     m_pipeline = m_device.CreateRenderPipeline(&pipelineDesc);
 }
@@ -559,6 +648,15 @@ void WebGPURenderer::createDevice()
     {
         wgslShader->setDevice(m_device);
     }
+
+    wgpu::SamplerDescriptor samplerDesc{};
+    samplerDesc.magFilter    = wgpu::FilterMode::Linear;
+    samplerDesc.minFilter    = wgpu::FilterMode::Linear;
+    samplerDesc.mipmapFilter = wgpu::MipmapFilterMode::Linear;
+    samplerDesc.addressModeU = wgpu::AddressMode::ClampToEdge;
+    samplerDesc.addressModeV = wgpu::AddressMode::ClampToEdge;
+    samplerDesc.addressModeW = wgpu::AddressMode::ClampToEdge;
+    m_defaultSampler         = m_device.CreateSampler(&samplerDesc);
 
     m_device.SetLoggingCallback(
         [](wgpu::LoggingType type, const char* message)
