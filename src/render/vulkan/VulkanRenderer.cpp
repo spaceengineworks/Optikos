@@ -16,10 +16,13 @@ VulkanRenderer::VulkanRenderer(IWindow* window, std::unique_ptr<IShader> shader)
     createRenderPass();
     createGraphicsPipeline();
     createFramebuffers();
+    createCommandPool();
 }
 
 VulkanRenderer::~VulkanRenderer()
 {
+    if (m_commandPool) vkDestroyCommandPool(m_device, m_commandPool, nullptr);
+
     for (auto framebuffer : m_swapChainFramebuffers)
     {
         vkDestroyFramebuffer(m_device, framebuffer, nullptr);
@@ -482,18 +485,6 @@ void VulkanRenderer::createGraphicsPipeline()
     inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     inputAssembly.primitiveRestartEnable = VK_FALSE;
 
-    VkViewport viewport{};
-    viewport.x        = 0.0f;
-    viewport.y        = 0.0f;
-    viewport.width    = (float) m_swapChainExtent.width;
-    viewport.height   = (float) m_swapChainExtent.height;
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-
-    VkRect2D scissor{};
-    scissor.offset = {0, 0};
-    scissor.extent = m_swapChainExtent;
-
     VkPipelineViewportStateCreateInfo viewportState{};
     viewportState.sType         = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
     viewportState.viewportCount = 1;
@@ -618,6 +609,39 @@ void VulkanRenderer::createFramebuffers()
             "[createFramebuffers] frame buffer " + std::to_string(i) + " successfully created",
             "log");
     }
+}
+
+void VulkanRenderer::createCommandPool()
+{
+    QueueFamilyIndices queueFamilyIndices = findQueueFamilies(Selected().m_physDevice);
+
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
+
+    if (vkCreateCommandPool(m_device, &poolInfo, nullptr, &m_commandPool) != VK_SUCCESS)
+    {
+        LOG_ERROR("[createCommandPool] failed to create command pool", "log");
+        throw std::runtime_error("failed to create command pool!");
+    }
+    LOG_TRACE("[createCommandPool] command pool successfully created", "log");
+}
+
+void VulkanRenderer::createCommandBuffer()
+{
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.commandPool        = m_commandPool;
+    allocInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = 1;
+
+    if (vkAllocateCommandBuffers(m_device, &allocInfo, &m_commandBuffer) != VK_SUCCESS)
+    {
+        LOG_ERROR("[createCommandBuffer] failed to allocate command buffers", "log");
+        throw std::runtime_error("failed to allocate command buffers!");
+    }
+    LOG_TRACE("[createCommandBuffer] command buffer successfully allocated", "log");
 }
 
 std::vector<const char*> VulkanRenderer::getRequiredExtensions()
@@ -960,6 +984,60 @@ VkShaderModule VulkanRenderer::createShaderModule(const std::vector<char>& code)
     }
 
     return shaderModule;
+}
+
+void VulkanRenderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex)
+{
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags            = 0;
+    beginInfo.pInheritanceInfo = nullptr;
+
+    if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS)
+    {
+        LOG_ERROR("[recordCommandBuffer] failed to begin recording command buffer!", "log");
+        throw std::runtime_error("failed to begin recording command buffer!");
+    }
+
+    VkRenderPassBeginInfo renderPassInfo{};
+    renderPassInfo.sType       = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassInfo.renderPass  = m_renderPass;
+    renderPassInfo.framebuffer = m_swapChainFramebuffers[imageIndex];
+
+    renderPassInfo.renderArea.offset = {0, 0};
+    renderPassInfo.renderArea.extent = m_swapChainExtent;
+
+    VkClearValue clearColor        = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+    renderPassInfo.clearValueCount = 1;
+    renderPassInfo.pClearValues    = &clearColor;
+
+    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
+
+    VkViewport viewport{};
+    viewport.x        = 0.0f;
+    viewport.y        = 0.0f;
+    viewport.width    = static_cast<float>(m_swapChainExtent.width);
+    viewport.height   = static_cast<float>(m_swapChainExtent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = m_swapChainExtent;
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+    vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+
+    vkCmdEndRenderPass(commandBuffer);
+
+    if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS)
+    {
+        LOG_ERROR("[recordCommandBuffer] failed to record command buffer!", "log");
+        throw std::runtime_error("failed to record command buffer!");
+    }
 }
 
 }  // namespace Optikos

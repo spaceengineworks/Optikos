@@ -105,6 +105,9 @@ class VulkanRenderer : public IRenderer
 
     VkPipeline m_graphicsPipeline = VK_NULL_HANDLE;
 
+    VkCommandPool   m_commandPool   = VK_NULL_HANDLE;
+    VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
+
     std::vector<VkFramebuffer> m_swapChainFramebuffers;
 
     std::unordered_map<std::string, unsigned int> m_shaderCache;
@@ -124,6 +127,8 @@ class VulkanRenderer : public IRenderer
     void createRenderPass();
     void createGraphicsPipeline();
     void createFramebuffers();
+    void createCommandPool();
+    void createCommandBuffer();
 
     std::vector<const char*> getRequiredExtensions();
     bool                     isDeviceSuitable(const PhysicalDevice& device);
@@ -153,6 +158,8 @@ class VulkanRenderer : public IRenderer
     VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
 
     VkShaderModule createShaderModule(const std::vector<char>& code);
+
+    void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 };
 
 }  // namespace Optikos
