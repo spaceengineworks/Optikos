@@ -103,6 +103,10 @@ class VulkanRenderer : public IRenderer
     VkRenderPass     m_renderPass = VK_NULL_HANDLE;
     VkPipelineLayout m_pipelineLayout;
 
+    VkPipeline m_graphicsPipeline = VK_NULL_HANDLE;
+
+    std::vector<VkFramebuffer> m_swapChainFramebuffers;
+
     std::unordered_map<std::string, unsigned int> m_shaderCache;
     unsigned int                                  m_defaultShader = DEFAULT_SHADER;
 
@@ -119,6 +123,7 @@ class VulkanRenderer : public IRenderer
     void createImageViews();
     void createRenderPass();
     void createGraphicsPipeline();
+    void createFramebuffers();
 
     std::vector<const char*> getRequiredExtensions();
     bool                     isDeviceSuitable(const PhysicalDevice& device);

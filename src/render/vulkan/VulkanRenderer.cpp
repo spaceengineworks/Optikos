@@ -13,11 +13,19 @@ VulkanRenderer::VulkanRenderer(IWindow* window, std::unique_ptr<IShader> shader)
     createLogicalDevice();
     createSwapChain();
     createImageViews();
+    createRenderPass();
     createGraphicsPipeline();
+    createFramebuffers();
 }
 
 VulkanRenderer::~VulkanRenderer()
 {
+    for (auto framebuffer : m_swapChainFramebuffers)
+    {
+        vkDestroyFramebuffer(m_device, framebuffer, nullptr);
+    }
+
+    if (m_graphicsPipeline) vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
     if (m_renderPass) vkDestroyRenderPass(m_device, m_renderPass, nullptr);
     if (m_pipelineLayout) vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
 
@@ -549,8 +557,67 @@ void VulkanRenderer::createGraphicsPipeline()
         throw std::runtime_error("failed to create pipeline layout!");
     }
 
+    VkGraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType      = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.stageCount = 2;
+    pipelineInfo.pStages    = shaderStages;
+
+    pipelineInfo.pVertexInputState   = &vertexInputInfo;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState      = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState   = &multisampling;
+    pipelineInfo.pDepthStencilState  = nullptr;
+    pipelineInfo.pColorBlendState    = &colorBlending;
+    pipelineInfo.pDynamicState       = &dynamicState;
+
+    pipelineInfo.layout = m_pipelineLayout;
+
+    pipelineInfo.renderPass = m_renderPass;
+    pipelineInfo.subpass    = 0;
+
+    pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
+    pipelineInfo.basePipelineIndex  = -1;
+
+    if (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
+                                  &m_graphicsPipeline) != VK_SUCCESS)
+    {
+        LOG_ERROR("[createGraphicsPipeline] failed to create graphics pipeline", "log");
+        throw std::runtime_error("failed to create graphics pipeline!");
+    }
+    LOG_TRACE("[createGraphicsPipeline] Graphics pipeline successfully created", "log");
+
     vkDestroyShaderModule(m_device, fragShaderModule, nullptr);
     vkDestroyShaderModule(m_device, vertShaderModule, nullptr);
+}
+
+void VulkanRenderer::createFramebuffers()
+{
+    m_swapChainFramebuffers.resize(m_swapChainImageViews.size());
+
+    for (size_t i = 0; i < m_swapChainImageViews.size(); i++)
+    {
+        VkImageView attachments[] = {m_swapChainImageViews[i]};
+
+        VkFramebufferCreateInfo framebufferInfo{};
+        framebufferInfo.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        framebufferInfo.renderPass      = m_renderPass;
+        framebufferInfo.attachmentCount = 1;
+        framebufferInfo.pAttachments    = attachments;
+        framebufferInfo.width           = m_swapChainExtent.width;
+        framebufferInfo.height          = m_swapChainExtent.height;
+        framebufferInfo.layers          = 1;
+
+        if (vkCreateFramebuffer(m_device, &framebufferInfo, nullptr, &m_swapChainFramebuffers[i]) !=
+            VK_SUCCESS)
+        {
+            LOG_ERROR("[createFramebuffers] failed to create framebuffer", "log");
+            throw std::runtime_error("failed to create framebuffer!");
+        }
+        LOG_TRACE(
+            "[createFramebuffers] frame buffer " + std::to_string(i) + " successfully created",
+            "log");
+    }
 }
 
 std::vector<const char*> VulkanRenderer::getRequiredExtensions()
