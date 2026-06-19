@@ -18,8 +18,9 @@ VulkanRenderer::VulkanRenderer(IWindow* window, std::unique_ptr<IShader> shader)
 
 VulkanRenderer::~VulkanRenderer()
 {
-    if(m_pipelineLayout) vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
-    
+    if (m_renderPass) vkDestroyRenderPass(m_device, m_renderPass, nullptr);
+    if (m_pipelineLayout) vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
+
     for (auto imageView : m_swapChainImageViews)
         if (imageView) vkDestroyImageView(m_device, imageView, nullptr);
     m_swapChainImageViews.clear();
@@ -386,6 +387,43 @@ void VulkanRenderer::createImageViews()
     }
 }
 
+void VulkanRenderer::createRenderPass()
+{
+    VkAttachmentDescription colorAttachment{};
+    colorAttachment.format  = m_swapChainImageFormat;
+    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+
+    colorAttachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachment.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+
+    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorAttachment.finalLayout   = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    VkAttachmentReference colorAttachmentRef{};
+    colorAttachmentRef.attachment = 0;
+    colorAttachmentRef.layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint    = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments    = &colorAttachmentRef;
+
+    VkRenderPassCreateInfo renderPassInfo{};
+    renderPassInfo.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassInfo.attachmentCount = 1;
+    renderPassInfo.pAttachments    = &colorAttachment;
+    renderPassInfo.subpassCount    = 1;
+    renderPassInfo.pSubpasses      = &subpass;
+
+    if (vkCreateRenderPass(m_device, &renderPassInfo, nullptr, &m_renderPass) != VK_SUCCESS)
+    {
+        LOG_ERROR("[createRenderPass] failed to create render pass", "log");
+        throw std::runtime_error("failed to create render pass!");
+    }
+}
+
 void VulkanRenderer::createGraphicsPipeline()
 {
 #ifndef OPTIKOS_SHADER_PATH
@@ -504,7 +542,8 @@ void VulkanRenderer::createGraphicsPipeline()
     pipelineLayoutInfo.pushConstantRangeCount = 0;
     pipelineLayoutInfo.pPushConstantRanges    = nullptr;
 
-    if (vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &m_pipelineLayout) != VK_SUCCESS)
+    if (vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &m_pipelineLayout) !=
+        VK_SUCCESS)
     {
         LOG_ERROR("[createGraphicsPipeline] failed to create pipeline layout", "log");
         throw std::runtime_error("failed to create pipeline layout!");
