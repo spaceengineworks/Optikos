@@ -100,6 +100,8 @@ class VulkanRenderer : public IRenderer
     VkFormat                 m_swapChainImageFormat;
     VkExtent2D               m_swapChainExtent;
 
+    VkPipelineLayout         m_pipelineLayout;
+
     std::unordered_map<std::string, unsigned int> m_shaderCache;
     unsigned int                                  m_defaultShader = DEFAULT_SHADER;
 
