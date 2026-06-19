@@ -78,6 +78,7 @@ endif()
 if(OPTIKOS_RENDERER STREQUAL "VULKAN")
     target_sources(Optikos PRIVATE 
         src/render/vulkan/VulkanRenderer.cpp
+        src/shader/SPIRV/VkShader.cpp
     )
     target_compile_definitions(Optikos PUBLIC OPTIKOS_BACKEND_VULKAN)
     target_compile_definitions(Optikos PRIVATE
@@ -86,6 +87,34 @@ if(OPTIKOS_RENDERER STREQUAL "VULKAN")
 
     target_link_libraries(Optikos PUBLIC Vulkan::Vulkan)
     target_link_libraries(Optikos PRIVATE unofficial::shaderc::shaderc)
+
+    if(NOT Vulkan_GLSLC_EXECUTABLE)
+        message(FATAL_ERROR "Vulkan glslc compiler not found! Make sure Vulkan SDK is installed correctly.")
+    endif()
+
+    set(VERT_SHADER_SRC "${CMAKE_CURRENT_SOURCE_DIR}/res/shaders/VKshader.vert")
+    set(FRAG_SHADER_SRC "${CMAKE_CURRENT_SOURCE_DIR}/res/shaders/VKshader.frag")
+
+    set(VERT_SHADER_SPV "${CMAKE_CURRENT_SOURCE_DIR}/res/shaders/VKshader.vert.spv")
+    set(FRAG_SHADER_SPV "${CMAKE_CURRENT_SOURCE_DIR}/res/shaders/VKshader.frag.spv")
+
+    add_custom_command(
+        OUTPUT ${VERT_SHADER_SPV}
+        COMMAND ${Vulkan_GLSLC_EXECUTABLE} ${VERT_SHADER_SRC} -o ${VERT_SHADER_SPV}
+        DEPENDS ${VERT_SHADER_SRC}
+        COMMENT "Compiling Vulkan Vertex Shader: VKshader.vert -> VKshader.vert.spv"
+    )
+
+    add_custom_command(
+        OUTPUT ${FRAG_SHADER_SPV}
+        COMMAND ${Vulkan_GLSLC_EXECUTABLE} ${FRAG_SHADER_SRC} -o ${FRAG_SHADER_SPV}
+        DEPENDS ${FRAG_SHADER_SRC}
+        COMMENT "Compiling Vulkan Fragment Shader: VKshader.frag -> VKshader.frag.spv"
+    )
+
+    add_custom_target(OptikosShaders ALL DEPENDS ${VERT_SHADER_SPV} ${FRAG_SHADER_SPV})
+
+    add_dependencies(Optikos OptikosShaders)
 endif()
 
 if(OPTIKOS_PLATFORM STREQUAL "GLFW")

@@ -67,3 +67,6 @@ res/images/image2.jpg
 
 # Clangd cache directory
 .cache
+
+res/shaders/VKshader.vert.spv
+res/shaders/VKshader.frag.spv
