@@ -20,12 +20,18 @@
 #include "shader/IShader.hpp"
 #include "utilities/logger.hpp"
 
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
+#include <glad/glad.h>
+
 namespace Optikos
 {
 int constexpr DEFAULT_SHADER = 0;
 
 constexpr const char* APP_NAME    = "Optikos";
 constexpr const char* ENGINE_NAME = "No Engine";
+
+constexpr const int MAX_FRAMES_IN_FLIGHT = 2;
 
 class VulkanRenderer : public IRenderer
 {
@@ -36,11 +42,15 @@ class VulkanRenderer : public IRenderer
     void         onWindowResize(int width, int height) override;
     void         beginFrame() override;
     void         endFrame() override;
-    void         submit(const DrawCommand&& command) override;
+    void         submit(DrawCommand&& command) override;
     void         flush() override;
     void         swap_buffer() override;
     unsigned int loadTexture(const std::vector<unsigned char>& data, int width,
                              int height) override;
+    void         waitIdle()
+    {
+        vkDeviceWaitIdle(m_device);
+    }
 
     void resetToDefault() override;
     void restoreStates() override;
@@ -105,8 +115,17 @@ class VulkanRenderer : public IRenderer
 
     VkPipeline m_graphicsPipeline = VK_NULL_HANDLE;
 
-    VkCommandPool   m_commandPool   = VK_NULL_HANDLE;
-    VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
+    VkCommandPool                m_commandPool = VK_NULL_HANDLE;
+    std::vector<VkCommandBuffer> m_commandBuffers;
+
+    std::vector<VkSemaphore> m_imageAvailableSemaphores;
+    std::vector<VkSemaphore> m_renderFinishedSemaphores;
+    std::vector<VkFence>     m_inFlightFences;
+
+    bool m_framebufferResized = false;
+    int  m_width = 0, m_height = 0;
+
+    uint32_t m_currentFrame = 0;
 
     std::vector<VkFramebuffer> m_swapChainFramebuffers;
 
@@ -128,7 +147,11 @@ class VulkanRenderer : public IRenderer
     void createGraphicsPipeline();
     void createFramebuffers();
     void createCommandPool();
-    void createCommandBuffer();
+    void createCommandBuffers();
+    void createSyncObjects();
+
+    void recreateSwapChain();
+    void cleanupSwapChain();
 
     std::vector<const char*> getRequiredExtensions();
     bool                     isDeviceSuitable(const PhysicalDevice& device);
@@ -160,6 +183,8 @@ class VulkanRenderer : public IRenderer
     VkShaderModule createShaderModule(const std::vector<char>& code);
 
     void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+
+    void drawFrame();
 };
 
 }  // namespace Optikos

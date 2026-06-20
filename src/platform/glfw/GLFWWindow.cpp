@@ -151,6 +151,11 @@ void GLFWWindow::poll_events()
     glfwPollEvents();
 }
 
+void GLFWWindow::wait_events()
+{
+    glfwWaitEvents();
+}
+
 bool GLFWWindow::should_close() const
 {
     return glfwWindowShouldClose(m_window);

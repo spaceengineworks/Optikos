@@ -89,7 +89,7 @@ void OpenGLRenderer::beginFrame()
     m_uiStateSet = false;
 }
 
-void OpenGLRenderer::submit(const DrawCommand&& command)
+void OpenGLRenderer::submit(DrawCommand&& command)
 {
     m_renderQueue.submit(std::move(command));
 }

@@ -75,6 +75,10 @@ class Optikos
         m_window->setWindowShouldClose(flag);
     }
 
+    inline void close() {
+        m_renderer->waitIdle();
+    }
+
    private:
     std::unique_ptr<IRenderer>    m_renderer;
     std::unique_ptr<IWindow>      m_window;

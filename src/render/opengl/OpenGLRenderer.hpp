@@ -44,7 +44,7 @@ class OpenGLRenderer : public IRenderer
     void         onWindowResize(int width, int height) override;
     void         beginFrame() override;
     void         endFrame() override;
-    void         submit(const DrawCommand&& command) override;
+    void         submit(DrawCommand&& command) override;
     void         flush() override;
     void         swap_buffer() override;
     unsigned int loadTexture(const std::vector<unsigned char>& data, int width,
