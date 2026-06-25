@@ -73,6 +73,11 @@ class VulkanRenderer : public IRenderer
     IRenderQueue& getRenderQueue() override;
 
    private:
+    struct UniformBufferObject
+    {
+        std::vector<float> position;
+    };
+    
     struct Batch
     {
         // unsigned int              VAO         = 0;
@@ -86,6 +91,9 @@ class VulkanRenderer : public IRenderer
 
         VkBuffer       m_vertexBuffer       = VK_NULL_HANDLE;
         VkDeviceMemory m_vertexBufferMemory = VK_NULL_HANDLE;
+
+        VkBuffer       m_indexBuffer       = VK_NULL_HANDLE;
+        VkDeviceMemory m_indexBufferMemory = VK_NULL_HANDLE;
 
         void clear()
         {
@@ -214,6 +222,7 @@ class VulkanRenderer : public IRenderer
     void createCommandBuffers();
     void createSyncObjects();
     void createVertexBuffer();
+    void createIndexBuffer();
 
     void recreateSwapChain();
     void cleanupSwapChain();
@@ -250,6 +259,11 @@ class VulkanRenderer : public IRenderer
     void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+
+    void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
+                      VkBuffer& buffer, VkDeviceMemory& bufferMemory);
+
+    void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 
     void drawFrame();
 };
