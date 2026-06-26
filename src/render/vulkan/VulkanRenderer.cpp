@@ -19,20 +19,17 @@ VulkanRenderer::VulkanRenderer(IWindow* window, std::unique_ptr<IShader> shader)
     createCommandPool();
     createCommandBuffers();
     createSyncObjects();
-
-    m_currentBatch.vertices = {{-0.5f, -0.5f, 255, 0, 0, 255, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
-                               {0.5f, -0.5f, 0, 255, 0, 255, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
-                               {0.5f, 0.5f, 0, 0, 255, 255, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f},
-                               {-0.5f, 0.5f, 255, 255, 0, 255, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f}};
-
-    m_currentBatch.indices = {0, 1, 2, 2, 3, 0};
-
-    createVertexBuffer();
-    createIndexBuffer();
 }
 
 VulkanRenderer::~VulkanRenderer()
 {
+    for (auto& pending : m_pendingDeletes)
+    {
+        vkDestroyBuffer(m_device, pending.buffer, nullptr);
+        vkFreeMemory(m_device, pending.memory, nullptr);
+    }
+    m_pendingDeletes.clear();
+
     for (size_t i = 0; i < m_imageAvailableSemaphores.size(); i++)
     {
         vkDestroySemaphore(m_device, m_imageAvailableSemaphores[i], nullptr);
@@ -45,17 +42,23 @@ VulkanRenderer::~VulkanRenderer()
     if (m_commandPool) vkDestroyCommandPool(m_device, m_commandPool, nullptr);
     cleanupSwapChain();
 
-    if (m_currentBatch.m_vertexBuffer)
-        vkDestroyBuffer(m_device, m_currentBatch.m_vertexBuffer, nullptr);
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+    {
+        if (m_currentBatch.m_vertexBuffer[i] != VK_NULL_HANDLE)
+            vkDestroyBuffer(m_device, m_currentBatch.m_vertexBuffer[i], nullptr);
 
-    if (m_currentBatch.m_vertexBufferMemory)
-        vkFreeMemory(m_device, m_currentBatch.m_vertexBufferMemory, nullptr);
+        if (m_currentBatch.m_vertexBufferMemory[i] != VK_NULL_HANDLE)
+            vkFreeMemory(m_device, m_currentBatch.m_vertexBufferMemory[i], nullptr);
 
-    if (m_currentBatch.m_indexBuffer)
-        vkDestroyBuffer(m_device, m_currentBatch.m_indexBuffer, nullptr);
+        if (m_currentBatch.m_indexBuffer[i] != VK_NULL_HANDLE)
+            vkDestroyBuffer(m_device, m_currentBatch.m_indexBuffer[i], nullptr);
 
-    if (m_currentBatch.m_indexBufferMemory)
-        vkFreeMemory(m_device, m_currentBatch.m_indexBufferMemory, nullptr);
+        if (m_currentBatch.m_indexBufferMemory[i] != VK_NULL_HANDLE)
+            vkFreeMemory(m_device, m_currentBatch.m_indexBufferMemory[i], nullptr);
+    }
+
+    if (m_descriptorSetLayout)
+        vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayout, nullptr);
 
     if (m_graphicsPipeline) vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
     if (m_renderPass) vkDestroyRenderPass(m_device, m_renderPass, nullptr);
@@ -548,7 +551,7 @@ void VulkanRenderer::createGraphicsPipeline()
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode             = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth               = 1.0f;
-    rasterizer.cullMode                = VK_CULL_MODE_BACK_BIT;
+    rasterizer.cullMode                = VK_CULL_MODE_NONE;
     rasterizer.frontFace               = VK_FRONT_FACE_CLOCKWISE;
     rasterizer.depthBiasEnable         = VK_FALSE;
     rasterizer.depthBiasConstantFactor = 0.0f;
@@ -586,12 +589,36 @@ void VulkanRenderer::createGraphicsPipeline()
     colorBlending.blendConstants[2] = 0.0f;
     colorBlending.blendConstants[3] = 0.0f;
 
+    VkPushConstantRange pushConstantRange = {};
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT;
+    pushConstantRange.offset     = 0;
+    pushConstantRange.size       = sizeof(PushConstants);
+
+    VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+    samplerLayoutBinding.binding            = 0;
+    samplerLayoutBinding.descriptorType     = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    samplerLayoutBinding.descriptorCount    = 1;
+    samplerLayoutBinding.stageFlags         = VK_SHADER_STAGE_FRAGMENT_BIT;
+    samplerLayoutBinding.pImmutableSamplers = nullptr;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings    = &samplerLayoutBinding;
+
+    // if (vkCreateDescriptorSetLayout(m_device, &layoutInfo, nullptr, &m_descriptorSetLayout) !=
+    //     VK_SUCCESS)
+    // {
+    //     LOG_ERROR("[createGraphicsPipeline] failed to create vkCreateDescriptorSetLayout",
+    //     "log"); throw std::runtime_error("failed to create descriptor set layout!");
+    // }
+
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount         = 0;
-    pipelineLayoutInfo.pSetLayouts            = nullptr;
-    pipelineLayoutInfo.pushConstantRangeCount = 0;
-    pipelineLayoutInfo.pPushConstantRanges    = nullptr;
+    pipelineLayoutInfo.setLayoutCount         = 0;        // TODO: 1; for TEXTURES
+    pipelineLayoutInfo.pSetLayouts            = nullptr;  // TODO: &m_descriptorSetLayout;
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges    = &pushConstantRange;
 
     if (vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &m_pipelineLayout) !=
         VK_SUCCESS)
@@ -738,56 +765,6 @@ void VulkanRenderer::createSyncObjects()
     LOG_TRACE("[createSyncObjects] synchronization objects successfully created", "log");
 }
 
-void VulkanRenderer::createVertexBuffer()
-{
-    VkDeviceSize bufferSize = VERTEX_SIZE * m_currentBatch.vertices.size();
-
-    VkBuffer       stagingBuffer;
-    VkDeviceMemory stagingBufferMemory;
-    createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 stagingBuffer, stagingBufferMemory);
-
-    void* data;
-    vkMapMemory(m_device, stagingBufferMemory, 0, bufferSize, 0, &data);
-    memcpy(data, m_currentBatch.vertices.data(), (size_t) bufferSize);
-    vkUnmapMemory(m_device, stagingBufferMemory);
-
-    createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_currentBatch.m_vertexBuffer,
-                 m_currentBatch.m_vertexBufferMemory);
-
-    copyBuffer(stagingBuffer, m_currentBatch.m_vertexBuffer, bufferSize);
-
-    vkDestroyBuffer(m_device, stagingBuffer, nullptr);
-    vkFreeMemory(m_device, stagingBufferMemory, nullptr);
-}
-
-void VulkanRenderer::createIndexBuffer()
-{
-    VkDeviceSize bufferSize = sizeof(m_currentBatch.indices[0]) * m_currentBatch.indices.size();
-
-    VkBuffer       stagingBuffer;
-    VkDeviceMemory stagingBufferMemory;
-    createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 stagingBuffer, stagingBufferMemory);
-
-    void* data;
-    vkMapMemory(m_device, stagingBufferMemory, 0, bufferSize, 0, &data);
-    memcpy(data, m_currentBatch.indices.data(), (size_t) bufferSize);
-    vkUnmapMemory(m_device, stagingBufferMemory);
-
-    createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_currentBatch.m_indexBuffer,
-                 m_currentBatch.m_indexBufferMemory);
-
-    copyBuffer(stagingBuffer, m_currentBatch.m_indexBuffer, bufferSize);
-
-    vkDestroyBuffer(m_device, stagingBuffer, nullptr);
-    vkFreeMemory(m_device, stagingBufferMemory, nullptr);
-}
-
 void VulkanRenderer::recreateSwapChain()
 {
     while (m_width <= 0 && m_height <= 0)
@@ -853,17 +830,99 @@ void VulkanRenderer::onWindowResize(int width, int height)
 
 void VulkanRenderer::beginFrame()
 {
+    m_renderQueue.clear();
 }
+
 void VulkanRenderer::endFrame()
 {
+    // flush();
 }
+
 void VulkanRenderer::submit(DrawCommand&& command)
 {
-    (void) command;
+    m_renderQueue.submit(std::move(command));
 }
+
 void VulkanRenderer::flush()
 {
+    auto& commands = m_renderQueue.getMutableCommands();
+    if (commands.empty()) return;
+
+    // 1. Сортировка по состояниям
+    std::sort(commands.begin(), commands.end(),
+              [](const DrawCommand& a, const DrawCommand& b)
+              {
+                  if (a.shaderId != b.shaderId) return a.shaderId < b.shaderId;
+                  if (a.textureId != b.textureId) return a.textureId < b.textureId;
+                  return a.textureMode < b.textureMode;
+              });
+
+    VkCommandBuffer commandBuffer = m_commandBuffers[m_currentFrame];
+
+    m_currentBatch.vertices.clear();
+    m_currentBatch.indices.clear();
+
+    uint32_t currentShaderId    = commands[0].shaderId;
+    uint32_t currentTextureId   = commands[0].textureId;
+    int      currentTextureMode = commands[0].textureMode;
+
+    for (const auto& cmd : commands)
+    {
+        if (cmd.shaderId != currentShaderId || cmd.textureId != currentTextureId ||
+            cmd.textureMode != currentTextureMode)
+        {
+            if (!m_currentBatch.vertices.empty())
+            {
+                PushConstants pc{};
+                pc.screenWidth  = (float) m_swapChainExtent.width;
+                pc.screenHeight = (float) m_swapChainExtent.height;
+                pc.hasTexture   = currentTextureMode;
+
+                vkCmdPushConstants(commandBuffer, m_pipelineLayout,
+                                   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                                   sizeof(PushConstants), &pc);
+
+                renderBatch(m_currentBatch, commandBuffer);
+            }
+
+            m_currentBatch.vertices.clear();
+            m_currentBatch.indices.clear();
+
+            currentShaderId    = cmd.shaderId;
+            currentTextureId   = cmd.textureId;
+            currentTextureMode = cmd.textureMode;
+        }
+
+        unsigned int vertexOffset = static_cast<unsigned int>(m_currentBatch.vertices.size());
+
+        for (const auto& vertex : cmd.vertices)
+        {
+            m_currentBatch.vertices.push_back(vertex);
+        }
+
+        for (auto index : cmd.indices)
+        {
+            m_currentBatch.indices.push_back(index + vertexOffset);
+        }
+    }
+
+    if (!m_currentBatch.vertices.empty())
+    {
+        PushConstants pc{};
+        pc.screenWidth  = (float) m_swapChainExtent.width;
+        pc.screenHeight = (float) m_swapChainExtent.height;
+        pc.hasTexture   = currentTextureMode;
+
+        vkCmdPushConstants(commandBuffer, m_pipelineLayout,
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                           sizeof(PushConstants), &pc);
+
+        renderBatch(m_currentBatch, commandBuffer);
+    }
+
+    commands.clear();
 }
+
 void VulkanRenderer::swap_buffer()
 {
     drawFrame();
@@ -880,9 +939,12 @@ unsigned int VulkanRenderer::loadTexture(const std::vector<unsigned char>& data,
 
 void VulkanRenderer::resetToDefault()
 {
+    /* stub */
 }
+
 void VulkanRenderer::restoreStates()
 {
+    /* stub */
 }
 
 IRenderQueue& VulkanRenderer::getRenderQueue()
@@ -1211,14 +1273,7 @@ void VulkanRenderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t
     scissor.extent = m_swapChainExtent;
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-    VkBuffer     vertexBuffers[] = {m_currentBatch.m_vertexBuffer};
-    VkDeviceSize offsets[]       = {0};
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-
-    vkCmdBindIndexBuffer(commandBuffer, m_currentBatch.m_indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-
-    vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(m_currentBatch.indices.size()), 1, 0, 0,
-                     0);
+    flush();
 
     vkCmdEndRenderPass(commandBuffer);
 
@@ -1309,6 +1364,81 @@ void VulkanRenderer::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDevice
     vkQueueWaitIdle(m_graphicsQueue);
 
     vkFreeCommandBuffers(m_device, m_commandPool, 1, &commandBuffer);
+}
+
+// TODO: add to log which buffer exactly was change
+void VulkanRenderer::ensureBufferCapacity(VkBuffer& buffer, VkDeviceMemory& memory, void*& mapped,
+                                          VkDeviceSize& capacity, VkDeviceSize requiredSize,
+                                          VkBufferUsageFlags usage)
+{
+    if (requiredSize <= capacity) return;
+
+    if (mapped)
+    {
+        vkUnmapMemory(m_device, memory);
+        mapped = nullptr;
+    }
+
+    if (buffer || memory)
+        m_pendingDeletes.push_back({buffer, memory, m_currentFrame + MAX_FRAMES_IN_FLIGHT});
+
+    VkDeviceSize newCapacity = std::max(requiredSize, capacity * 2);
+    if (newCapacity == 0) newCapacity = requiredSize;
+
+    createBuffer(newCapacity, usage,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, buffer,
+                 memory);
+
+    vkMapMemory(m_device, memory, 0, newCapacity, 0, &mapped);
+    capacity = newCapacity;
+
+    LOG_TRACE("[ensureBufferCapacity] buffer (re)created with size: " + std::to_string(newCapacity),
+              "log");
+}
+
+void VulkanRenderer::renderBatch(Batch& batch, VkCommandBuffer commandBuffer)
+{
+    if (batch.vertices.empty() || batch.indices.empty()) return;
+
+    VkDeviceSize vSize = batch.vertices.size() * sizeof(Vertex);
+    VkDeviceSize iSize = batch.indices.size() * sizeof(unsigned int);
+
+    ensureBufferCapacity(
+        batch.m_vertexBuffer[m_currentFrame], batch.m_vertexBufferMemory[m_currentFrame],
+        batch.m_vertexMapped[m_currentFrame], batch.m_vertexCapacity[m_currentFrame], vSize,
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+
+    ensureBufferCapacity(batch.m_indexBuffer[m_currentFrame],
+                         batch.m_indexBufferMemory[m_currentFrame],
+                         batch.m_indexMapped[m_currentFrame], batch.m_indexCapacity[m_currentFrame],
+                         iSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+
+    memcpy(batch.m_vertexMapped[m_currentFrame], batch.vertices.data(), (size_t) vSize);
+    memcpy(batch.m_indexMapped[m_currentFrame], batch.indices.data(), (size_t) iSize);
+
+    VkBuffer     vertexBuffers[] = {batch.m_vertexBuffer[m_currentFrame]};
+    VkDeviceSize offsets[]       = {0};
+
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+    vkCmdBindIndexBuffer(commandBuffer, batch.m_indexBuffer[m_currentFrame], 0,
+                         VK_INDEX_TYPE_UINT32);
+
+    vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(batch.indices.size()), 1, 0, 0, 0);
+}
+
+void VulkanRenderer::cleanupFrame(uint64_t finishedFrame)
+{
+    for (auto it = m_pendingDeletes.begin(); it != m_pendingDeletes.end();)
+    {
+        if (it->frameIndex <= finishedFrame)
+        {
+            vkDestroyBuffer(m_device, it->buffer, nullptr);
+            vkFreeMemory(m_device, it->memory, nullptr);
+            it = m_pendingDeletes.erase(it);
+        }
+        else
+            ++it;
+    }
 }
 
 void VulkanRenderer::drawFrame()

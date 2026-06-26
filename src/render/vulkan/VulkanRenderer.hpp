@@ -28,6 +28,16 @@
 
 namespace Optikos
 {
+int constexpr SIZE_OF_ATTRIBUTES = 4;
+
+enum
+{
+    POSITION_IN_ATTRIBUTES = 0,
+    COLOR_IN_ATTRIBUTES    = 1,
+    UV_IN_ATTRIBUTES       = 2,
+    WH_IN_ATTRIBUTES       = 3
+};
+
 int constexpr DEFAULT_SHADER       = 0;
 int constexpr NO_TEXTURE           = 0;
 int constexpr DEFAULT_TEXTURE_UNIT = 0;
@@ -73,11 +83,6 @@ class VulkanRenderer : public IRenderer
     IRenderQueue& getRenderQueue() override;
 
    private:
-    struct UniformBufferObject
-    {
-        std::vector<float> position;
-    };
-    
     struct Batch
     {
         // unsigned int              VAO         = 0;
@@ -89,11 +94,15 @@ class VulkanRenderer : public IRenderer
         std::vector<Vertex>       vertices;
         std::vector<unsigned int> indices;
 
-        VkBuffer       m_vertexBuffer       = VK_NULL_HANDLE;
-        VkDeviceMemory m_vertexBufferMemory = VK_NULL_HANDLE;
+        std::array<VkBuffer, MAX_FRAMES_IN_FLIGHT>       m_vertexBuffer       = {VK_NULL_HANDLE};
+        std::array<VkDeviceMemory, MAX_FRAMES_IN_FLIGHT> m_vertexBufferMemory = {VK_NULL_HANDLE};
+        std::array<void*, MAX_FRAMES_IN_FLIGHT>          m_vertexMapped       = {nullptr};
+        std::array<VkDeviceSize, MAX_FRAMES_IN_FLIGHT>   m_vertexCapacity     = {0};
 
-        VkBuffer       m_indexBuffer       = VK_NULL_HANDLE;
-        VkDeviceMemory m_indexBufferMemory = VK_NULL_HANDLE;
+        std::array<VkBuffer, MAX_FRAMES_IN_FLIGHT>       m_indexBuffer       = {VK_NULL_HANDLE};
+        std::array<VkDeviceMemory, MAX_FRAMES_IN_FLIGHT> m_indexBufferMemory = {VK_NULL_HANDLE};
+        std::array<void*, MAX_FRAMES_IN_FLIGHT>          m_indexMapped       = {nullptr};
+        std::array<VkDeviceSize, MAX_FRAMES_IN_FLIGHT>   m_indexCapacity     = {0};
 
         void clear()
         {
@@ -111,24 +120,55 @@ class VulkanRenderer : public IRenderer
             return bindingDescription;
         }
 
-        static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions()
+        static std::array<VkVertexInputAttributeDescription, SIZE_OF_ATTRIBUTES>
+        getAttributeDescriptions()
         {
-            std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
-            attributeDescriptions[0].binding  = 0;
-            attributeDescriptions[0].location = 0;
-            attributeDescriptions[0].format   = VK_FORMAT_R32G32_SFLOAT;
-            attributeDescriptions[0].offset   = POSITION_POS;
+            std::array<VkVertexInputAttributeDescription, SIZE_OF_ATTRIBUTES>
+                attributeDescriptions{};
+            attributeDescriptions[POSITION_IN_ATTRIBUTES].binding  = 0;
+            attributeDescriptions[POSITION_IN_ATTRIBUTES].location = POSITION_IN_ATTRIBUTES;
+            attributeDescriptions[POSITION_IN_ATTRIBUTES].format   = VK_FORMAT_R32G32_SFLOAT;
+            attributeDescriptions[POSITION_IN_ATTRIBUTES].offset   = POSITION_POS;
 
-            attributeDescriptions[1].binding  = 0;
-            attributeDescriptions[1].location = 1;
-            attributeDescriptions[1].format   = VK_FORMAT_R8G8B8A8_UNORM;
-            attributeDescriptions[1].offset   = COLOR_POS;
+            attributeDescriptions[COLOR_IN_ATTRIBUTES].binding  = 0;
+            attributeDescriptions[COLOR_IN_ATTRIBUTES].location = COLOR_IN_ATTRIBUTES;
+            attributeDescriptions[COLOR_IN_ATTRIBUTES].format   = VK_FORMAT_R8G8B8A8_UNORM;
+            attributeDescriptions[COLOR_IN_ATTRIBUTES].offset   = COLOR_POS;
+
+            attributeDescriptions[UV_IN_ATTRIBUTES].binding  = 0;
+            attributeDescriptions[UV_IN_ATTRIBUTES].location = UV_IN_ATTRIBUTES;
+            attributeDescriptions[UV_IN_ATTRIBUTES].format   = VK_FORMAT_R32G32_SFLOAT;
+            attributeDescriptions[UV_IN_ATTRIBUTES].offset   = UV_POS;
+
+            attributeDescriptions[WH_IN_ATTRIBUTES].binding  = 0;
+            attributeDescriptions[WH_IN_ATTRIBUTES].location = WH_IN_ATTRIBUTES;
+            attributeDescriptions[WH_IN_ATTRIBUTES].format   = VK_FORMAT_R32G32B32A32_SFLOAT;
+            attributeDescriptions[WH_IN_ATTRIBUTES].offset   = WH_POS;
 
             return attributeDescriptions;
         }
     };
 
+    // TODO: can be padding
+    // https://docs.vulkan.org/guide/latest/push_constants.html#:~:text=The%20following%20diagram%20provides%20a%20visualization%20of%20how%20push%20constant%20offsets%20work.
+    struct PushConstants
+    {
+        float screenWidth;
+        float screenHeight;
+        int   hasTexture;
+    };
+    struct PendingDeletion
+    {
+        VkBuffer       buffer;
+        VkDeviceMemory memory;
+        uint64_t       frameIndex;
+    };
+
+    std::vector<PendingDeletion> m_pendingDeletes;
+
     Batch m_currentBatch;
+
+    VkDescriptorSetLayout m_descriptorSetLayout = VK_NULL_HANDLE;
 
     struct QueueFamilyIndices
     {
@@ -206,8 +246,6 @@ class VulkanRenderer : public IRenderer
 
     std::unordered_map<std::string, unsigned int> m_textureCache;
 
-    bool m_uiStateSet = false;
-
     void createInstance();
     void setupDebugMessenger();
     void createSurface();
@@ -221,8 +259,6 @@ class VulkanRenderer : public IRenderer
     void createCommandPool();
     void createCommandBuffers();
     void createSyncObjects();
-    void createVertexBuffer();
-    void createIndexBuffer();
 
     void recreateSwapChain();
     void cleanupSwapChain();
@@ -264,6 +300,14 @@ class VulkanRenderer : public IRenderer
                       VkBuffer& buffer, VkDeviceMemory& bufferMemory);
 
     void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
+
+    void ensureBufferCapacity(VkBuffer& buffer, VkDeviceMemory& memory, void*& mapped,
+                              VkDeviceSize& capacity, VkDeviceSize requiredSize,
+                              VkBufferUsageFlags usage);
+
+    void renderBatch(Batch& batch, VkCommandBuffer commandBuffer);
+
+    void cleanupFrame(uint64_t finishedFrame);
 
     void drawFrame();
 };
