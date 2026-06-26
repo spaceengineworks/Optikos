@@ -2,12 +2,60 @@
   "version": 3,
   "configurePresets": [
     {
+      "name": "windows-ninja",
+      "hidden": true,
+      "displayName": "Windows / MSVC (Ninja) + vcpkg",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "toolset": {
+        "value": "v143",
+        "strategy": "external"
+      },
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      },
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "windows-ninja-opengl",
+      "displayName": "Windows / Ninja [OpenGL]",
+      "description": "Build with OpenGL backend",
+      "inherits": "windows-ninja",
+      "cacheVariables": {
+        "OPTIKOS_RENDERER": "OPENGL"
+      }
+    },
+    {
+      "name": "windows-ninja-vulkan",
+      "displayName": "Windows / Ninja [Vulkan]",
+      "description": "Build with Vulkan backend",
+      "inherits": "windows-ninja",
+      "cacheVariables": {
+        "OPTIKOS_RENDERER": "VULKAN"
+      }
+    },
+    {
+      "name": "windows-ninja-webgpu",
+      "displayName": "Windows / Ninja [WebGPU]",
+      "description": "Build with WebGPU backend",
+      "inherits": "windows-ninja",
+      "cacheVariables": {
+        "OPTIKOS_RENDERER": "WEBGPU"
+      }
+    },
+    {
       "name": "windows-msvc",
       "displayName": "Windows / MSVC + vcpkg",
       "generator": "Visual Studio 18 2026",
       "binaryDir": "${sourceDir}/build",
       "architecture": "x64",
-      "toolchainFile": "C:/Users/ilanv/vcpkg/scripts/buildsystems/vcpkg.cmake",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",

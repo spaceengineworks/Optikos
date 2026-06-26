@@ -1,3 +1,11 @@
+#if defined(_WIN32)
+    #define GLFW_EXPOSE_NATIVE_WIN32
+#elif defined(__APPLE__)
+    #define GLFW_EXPOSE_NATIVE_COCOA
+#elif defined(__linux__)
+    #define GLFW_EXPOSE_NATIVE_X11
+    #define GLFW_EXPOSE_NATIVE_WAYLAND
+#endif
 #include "GLFWWindow.hpp"
 
 #include "render/IRenderer.hpp"
@@ -109,6 +117,59 @@ void GLFWWindow::createVulkanSurface(VkInstance instance, VkSurfaceKHR* surface)
         LOG_ERROR("[createVulkanSurface] Error while creating surface", "log");
 
     LOG_TRACE("[createVulkanSurface] Surface created", "log");
+}
+#endif
+
+#ifdef OPTIKOS_BACKEND_WEBGPU
+void GLFWWindow::createWebGPUSurface(const char* label, wgpu::Instance instance, wgpu::Surface* surface)
+{
+    wgpu::SurfaceDescriptor surfaceDesc{};
+    surfaceDesc.label = label;
+
+#if defined(_WIN32)
+    wgpu::SurfaceSourceWindowsHWND winDesc{};
+    winDesc.sType           = wgpu::SType::SurfaceSourceWindowsHWND;
+    winDesc.hwnd            = glfwGetWin32Window(m_window);
+    winDesc.hinstance       = GetModuleHandle(nullptr);
+    surfaceDesc.nextInChain = &winDesc;
+#elif defined(__APPLE__)
+    wgpu::SurfaceSourceMetalLayer macDesc{};
+    macDesc.sType           = wgpu::SType::SurfaceSourceMetalLayer;
+    macDesc.layer           = getMetalLayerFromGLFW(glfwGetCocoaWindow(m_window));
+    surfaceDesc.nextInChain = &macDesc;
+#else
+    if (m_window->isX11Active())
+    {
+        wgpu::SurfaceSourceXlibWindow x11Desc{};
+        x11Desc.sType           = wgpu::SType::SurfaceSourceXlibWindow;
+        x11Desc.display         = glfwGetX11Display();
+        x11Desc.window          = static_cast<uint64_t>(glfwGetX11Window(m_window));
+        surfaceDesc.nextInChain = &x11Desc;
+    }
+    else
+    {
+        wgpu::SurfaceSourceWaylandWindow waylandDesc{};
+        waylandDesc.sType       = wgpu::SType::SurfaceSourceWaylandWindow;
+        waylandDesc.display     = glfwGetWaylandDisplay();
+        waylandDesc.window      = glfwGetWaylandWindow(m_window);
+        surfaceDesc.nextInChain = &waylandDesc;
+    }
+#endif
+
+    *surface = instance.CreateSurface(&surfaceDesc);
+}
+#endif
+
+#ifdef __linux__
+bool GLFWWindow::isX11Active()
+{
+#ifdef GLFW_EXPOSE_NATIVE_WAYLAND
+    return false;
+#endif
+
+#ifdef GLFW_EXPOSE_NATIVE_X11
+    return true;
+#endif
 }
 #endif
 

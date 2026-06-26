@@ -44,12 +44,20 @@ class GLFWWindow : public IWindow
     void createVulkanSurface(VkInstance instance, VkSurfaceKHR* surface) override;
 #endif
 
+#ifdef OPTIKOS_BACKEND_WEBGPU
+    virtual void createWebGPUSurface(const char* label, wgpu::Instance instance, wgpu::Surface* surface) override;
+#endif
+
     void* native_handle() override;
     void  poll_events() override;
     void  wait_events() override;
     bool  should_close() const override;
     int   getHeight() const override;
     int   getWidth() const override;
+    
+#ifdef __linux__
+    bool isX11Active() const override;
+#endif
 
     void makeContextCurrent();
 

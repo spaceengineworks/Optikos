@@ -3,9 +3,10 @@ project(Optikos LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(OPTIKOS_RENDERER "OPENGL" CACHE STRING "Render backend")
-set_property(CACHE OPTIKOS_RENDERER PROPERTY STRINGS "OPENGL" "VULKAN" "NONE")
+set_property(CACHE OPTIKOS_RENDERER PROPERTY STRINGS "OPENGL" "VULKAN" "WEBGPU" "NONE")
 
 set(OPTIKOS_PLATFORM "GLFW" CACHE STRING "Platform backend")
 set_property(CACHE OPTIKOS_PLATFORM PROPERTY STRINGS "GLFW" "WIN32" "NONE")
@@ -23,6 +24,9 @@ endif()
 if(OPTIKOS_RENDERER STREQUAL "VULKAN")
     find_package(Vulkan REQUIRED MODULE) 
     find_package(unofficial-shaderc CONFIG REQUIRED)
+endif()
+if(OPTIKOS_RENDERER STREQUAL "WEBGPU")
+    find_package(Dawn CONFIG REQUIRED)
 endif()
 
 set(COMMON_SOURCES
@@ -46,6 +50,18 @@ add_library(Optikos::Optikos ALIAS Optikos)
 target_compile_definitions(Optikos PRIVATE
     OPTIKOS_DEFAULT_FONT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/res/fonts/"
 )
+
+if(OPTIKOS_RENDERER STREQUAL "WEBGPU")
+    target_sources(Optikos PRIVATE
+        src/render/webgpu/WebGPURenderer.cpp
+        src/shader/WGSL/WGSLShader.cpp
+    )
+    target_compile_definitions(Optikos PUBLIC OPTIKOS_BACKEND_WEBGPU)
+    target_compile_definitions(Optikos PRIVATE
+        OPTIKOS_SHADER_PATH="${CMAKE_CURRENT_SOURCE_DIR}/res/shaders/"
+    )
+    target_link_libraries(Optikos PUBLIC dawn::webgpu_dawn)
+endif()
 
 if(OPTIKOS_RENDERER STREQUAL "OPENGL")
     target_sources(Optikos PRIVATE 
