@@ -16,6 +16,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "VulkanConfig.hpp"
 #include "platform/IWindow.hpp"
 #include "render/IRenderer.hpp"
 #include "render/RenderQueue.hpp"
@@ -74,6 +75,28 @@ class VulkanRenderer : public IRenderer
     void         waitIdle()
     {
         vkDeviceWaitIdle(m_device);
+    }
+    bool setUpConfig(void* outConfig) override
+    {
+        if (!outConfig) return false;
+
+        auto& config = *static_cast<SharedVulkanConfig*>(outConfig);
+
+        config.instance         = &m_instance;
+        config.physicalDevice   = &Selected().m_physDevice;
+        config.device           = &m_device;
+        config.surface          = &m_surface;
+        config.graphicsQueue    = &m_graphicsQueue;
+        config.presentQueue     = &m_presentQueue;
+        config.swapChain        = &m_swapChain;
+        config.swapChainFormat  = &m_swapChainImageFormat;
+        config.swapChainExtent  = &m_swapChainExtent;
+        config.renderPass       = &m_renderPass;
+        config.pipelineLayout   = &m_pipelineLayout;
+        config.graphicsPipeline = &m_graphicsPipeline;
+        config.commandPool      = &m_commandPool;
+
+        return config.isValid();
     }
 
     void resetToDefault() override;

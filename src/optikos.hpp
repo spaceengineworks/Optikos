@@ -1,5 +1,6 @@
 #ifndef OPTIKOS_H
 #define OPTIKOS_H
+
 #include <memory>
 
 #include "input/IInputSystem.hpp"
